@@ -1,0 +1,215 @@
+#Outstanding questions for the GLBRC AIM 6 group (see below for start of pipeline)
+#Please add comments. If we need to continue discussion in a meeting, we can.
+
+-Taxon classification
+    -What program should we use for the classification?
+   	 -sintax in usearch is detailed below
+   	 -could use RDP (is it worth it?)
+    -What database should we use?
+   	 -Silva for 16S and UNITE for ITS
+	-Other options?
+   	 -How frequently do we want to update the database? Usearch-formatted silva file is only in version v.123, but the newest version available (not formatted for usearch) is v.132
+   	 -note that formating of new versions is not trivial
+
+-Tree building - what program? 
+    -I prefer PASTA (https://github.com/smirarab/pasta/blob/master/pasta-doc/pasta-tutorial.md)
+    -USEARCH has a tree clustering function but I have no experience with it. cluster_agg (https://www.drive5.com/usearch/manual/cmd_cluster_agg.html)
+
+-How do we merge the usearch created biom file with the taxonomy file? 
+
+-Primer choices (Bonito lab take particular note)
+    -A recent report found that ITS2 primers have acceptable coverage of AMF taxon compared to AMF specific primers. (http://onlinelibrary.wiley.com/doi/10.1111/nph.15035/full). 
+    
+-Oligotyping:
+     -uniose3 filters any ZOTU (oligiotype equivalents) that occur less than 8 times in the dataset. Do we want to relax this filtering to include more ZOTUs?
+_____________________________________________________________
+
+###Start of the pipeline###
+# Note: this pipeline merges raw fastq sequences from two illumina runs (ignore run 2 code if you’re only working with 1 run)
+# Make sure you are in the folder with the extracted forward and reverse reads from Run 1
+
+# 1) Quality checking
+# 1a) First look at the quality of  raw unmerged seqs for run1
+#https://www.drive5.com/usearch/manual/pipe_readprep_understand.html
+
+mkdir fastq_info_run1
+
+# make a forloop to run fastx_info on every file 
+nano fasta_info_fq.sh
+
+!#/bin/bash
+
+for fq in *.fastq
+
+do
+ /mnt/research/rdp/public/thirdParty/usearch10.0.240_i86linux64 -fastx_info $fq -output fastq_info_run1/$fq
+ 
+done
+### end bash
+# make file executable and run the forloop create in your nano fasta_info_fq.sh file
+chmod +x fasta_info_fq.sh
+./fasta_info_fq.sh
+
+
+#move to the fastq_info directory
+cd fastq_info_run1/
+
+#Now run the below code to summarize the fastq info for all of the forward and reverse reads
+
+grep "^File" * > Run1_fastq_lengths.txt
+grep "^EE" * > Run1_fastq_EE.txt
+#look for any forward and reverse reads that look especially bad in terms of quality (high E is bad quality)
+#this info will also be really helpful for troubleshooting later on (e.g. why some samples have extremely low read numbers)
+
+# 1b) Repeat the above for Run2.
+
+
+
+#  2) Merge the forward and reverse sequences and trim adapters (for each run individually)
+# 2a) Merge Pairs 
+#Make sure you are in the folder with the extracted forward and reverse reads from Run 1
+#https://www.drive5.com/usearch/manual/merge_options.html
+#-alnout gives you a human readable text file of the alignment and misalignments for each pair merged.
+#-tabbedout give you extensive information on the quality of the merge
+#This step takes approximately 1 minute
+
+mkdir mergedfastq_run1
+
+/mnt/research/rdp/public/thirdParty/usearch10.0.240_i86linux64 -fastq_mergepairs *R1*.fastq -relabel @ -fastqout mergedfastq_run1/combined_merged_run1.fastq  -tabbedout mergedfastq_run1/combined_merged_run1_pair_report.txt -alnout mergedfastq_run1/combined_merged_run1_pair_aln.txt
+
+
+
+
+#If you are getting a low percentage of sequence pair merging (e.g. below 60%), consider trimming the reverse reads See bottom of script (“improving mergepairs”) for script on truncating reverse reads.
+# tips on poor merging: https://drive5.com/usearch/manual/merge_badrev.html. 
+#2b) let's check sequence quality of the merged seqs - USEARCH has a great command for checking the expected error and lengths of the sequences.
+#https://www.drive5.com/usearch/manual/cmd_fastq_eestats2.html
+
+/mnt/research/rdp/public/thirdParty/usearch10.0.240_i86linux64 -fastq_eestats2 mergedfastq_run1/combined_merged_run1.fastq -output fastq_info/combined_merged_run1_eestats2.txt
+
+# 2c) Now remove any residual bases from adapter seqs using cut adapt
+#http://cutadapt.readthedocs.io/en/stable/index.html
+# this code removes the forward adapter of 515F and the reverse complement of 806R 
+# if you’re using the hpcc, load cutadapt 
+module load cutadapt/1.8.1 
+
+cutadapt -a ATTAGAWACCCBDGTAGTCC -a GTGCCAGCMGCCGCGGTAA -o cut_combined_merged_run1.fastq combined_merged_run1.fastq > cut_adpt_results_combined_merged_run1.txt
+
+#Repeat the above merging and adapter removal for run 2.
+
+# 3) Now we need to combine the two merged sequence files
+#Make sure you do not use replicate sample names between the two runs
+
+cat cut_combined_merged_run1.fastq cut_combined_merged_run2.fastq > combined_merged_both_runs.fastq
+
+#Before we continue, you may want to check if the sample names are formatted correctly. USEARCH does some funny cutting during the merging step. Any hyphens or underscores can be problematic and you need to remove these (use sed command and merged_cut files)
+#Additionally, this is a good opportunity to double check that all of your samples merged and have unique IDs
+#https://www.drive5.com/usearch/manual/cmd_fastx_get_sample_names.html
+
+/mnt/research/rdp/public/thirdParty/usearch10.0.240_i86linux64 -fastx_get_sample_names combined_merged_both_runs.fastq -output combined_merged_both_runs_samples.txt
+
+
+# 4) Filtering and Truncate the merged seqs  to MaxEE and set length
+#https://www.drive5.com/usearch/manual/cmd_fastq_filter.html
+# 250 bp is the expected overlaps with 515F and 806R
+
+/mnt/research/rdp/public/thirdParty/usearch10.0.240_i86linux64 -fastq_filter combined_merged_both_runs.fastq -fastq_maxee 1 -fastq_trunclen 250 -fastaout combined_merged_both_runs_fil.fa
+
+# 5) Filter so we only have unique sequences #https://www.drive5.com/usearch/manual/cmd_fastx_uniques.html
+
+/mnt/research/rdp/public/thirdParty/usearch10.0.240_i86linux64 -fastx_uniques combined_merged_both_runs_fil.fa  -fastqout uniques_combined_merged_both_runs_fil.fa -sizeout
+#This step takes approximately 2 minutes 30 seconds with ~11 million reads
+
+# 6) Cluster into OTUS and filter out singletons 
+#You can remove single sequences but singletons are also removed at the OTU clustering step (cluster_otus filters out OTUs <2 and unoise3 filters ZOTUs <8)
+
+#Now you need to cluster the dereplicated (unique) sequences into OTUs or ZOTUs (similar to oligotypes)
+#First lets cluster at 97% identity using uparse #https://www.drive5.com/usearch/manual/cmd_cluster_otus.html
+#this also denovo chimera filters and filters singletons (OTUs with less than 2 reads) by default
+
+/mnt/research/rdp/public/thirdParty/usearch10.0.240_i86linux64 -cluster_otus uniques_combined_merged_both_runs_fil.fa -otus combined_merged_both_runs_otus.fa -uparseout combined_merged_both_runs_otus_uparse.txt -relabel OTU
+#This step takes approximately 30 minutes with ~330,000 unique sequences
+
+# 7) Now we need to map the OTUs back to the merged reads at 97% similarity to OTUs representative sequences
+#https://www.drive5.com/usearch/manual/cmd_otutab.html
+#-id 0.97 -strand plus are defaults
+
+/mnt/research/rdp/public/thirdParty/usearch10.0.240_i86linux64 -otutab combined_merged_both_runs.fastq -otus combined_merged_both_runs_otus.fa -uc combined_merged_both_runs_OTU_map.uc -otutabout combined_merged_both_runs_OTU_table.txt -biomout combined_merged_both_runs_OTU_jsn.biom -notmatchedfq combined_merged_run2_otu_unmapped.fq
+#This step takes approximately 1 hour 30 minutes with ~30,000 OTUs
+
+# 8) classifying taxa against the reference database
+#https://www.drive5.com/usearch/manual/cmd_sintax.html
+#right now we are using silva version 123 which you can download from: https://www.drive5.com/usearch/manual/sintax_downloads.html
+
+/mnt/research/rdp/public/thirdParty/usearch10.0.240_i86linux64 -sintax combined_merged_both_runs_otus.fa -db silva_16s_v123.fa -tabbedout combined_merged_both_runs_otus_taxonomy.sintax -strand both
+#This step takes approximately  18 hours and 20 minutes with ~30,000 OTUs against the Silva reference database, so you may want to submit a job for it.
+
+# 9) Identify ZOTUs using unoise3 
+#https://www.drive5.com/usearch/manual/cmd_unoise3.html
+#this also denovo chimera filters, denioses the representative sequences, and filters low abundance ZOTUs (OTUs with less than 8 reads) by default
+
+/mnt/research/rdp/public/thirdParty/usearch10.0.240_i86linux64 -unoise3 uniques_combined_merged_both_runs_fil.fa -zotus combined_merged_both_runs_zotus.fa  -tabbedout combined_merged_both_runs_zotus_report.txt 
+#This step takes approximately 30 minutes with ~330,000 unique sequences
+
+#You must rename your representative sequence names from “Zotu” to “ZOTU” for the mapping back to the raw reads step to work correctly
+
+sed -i 's/Zotu/ZOTU/g' combined_merged_both_runs_zotus.fa
+
+# 10) Now we need to map the OTUs back to the merged reads at 97% similarity to OTUs representative sequences
+#https://www.drive5.com/usearch/manual/cmd_otutab.html
+#-id 0.97 -strand plus are defaults
+
+/mnt/research/rdp/public/thirdParty/usearch10.0.240_i86linux64 -otutab combined_merged_both_runs.fastq -zotus combined_merged_both_runs_zotus.fa -uc combined_merged_both_runs_ZOTU_map.uc -otutabout combined_merged_both_runs_ZOTU_table.txt -biomout combined_merged_both_runs_ZOTU_jsn.biom -notmatchedfq combined_merged_run2_ZOTU_unmapped.fq
+#This step takes approximately 1 hour with ~31,000 ZOTUs
+
+# 11) Classify zotus against the reference database
+#https://www.drive5.com/usearch/manual/cmd_sintax.html
+
+/mnt/research/rdp/public/thirdParty/usearch10.0.240_i86linux64 -sintax combined_merged_both_runs_zotus.fa -db silva_16s_v123.fa -tabbedout combined_merged_both_runs_zotus_taxonomy.sintax -strand both
+#This step takes approximately  19 hours and 13 minutes with ~31,000 ZOTUs against the Silva reference database
+
+
+
+#######################################
+
+# Improving mergepairs with truncate
+# If you have poor merge success (<60% merge), you may want to trim the reverse reads. Reverse reads are often of lower quality. Usearch merges by taking bp from the forward read, so removing bad basecalls in the reverse read can improve merging.
+#you can use the mergepairs -alnout file to determine the the right length of trimming.
+#For example, we trimmed the tail of the reverse read by 80bp because the forward read alignment to the reverse read tail was poor and the 505F to 815R has a higher overlap (i.e. ~210bp overlap)
+
+# Example code to truncate reverse read 
+mkdir trim_reverse_run1
+
+#Use a shell for loop to truncate 
+# -fastx_truncate (https://www.drive5.com/usearch/manual/cmd_fastx_truncate.html)
+#You must be in the directory with you raw reverse reads
+
+nano rev_trunc_run1.sh
+##
+for fq in *R2_001.fastq
+do
+  /mnt/research/rdp/public/thirdParty/usearch10.0.240_i86linux64 -fastx_truncate $fq -stripright 80 -fastqout trim_reverse_run1/$fq
+
+done
+###end of executable file###
+
+#make the file executable and run the code.
+chmod +x nano rev_trunc_run1.sh
+./nano rev_trunc_run1.sh
+
+
+#Now try to merge the sequences again with the truncated reverse reads.
+# note that you need to specify the location for your forward (R1) and reverse reads (R2)
+
+/mnt/research/rdp/public/thirdParty/usearch10.0.240_i86linux64 -fastq_mergepairs *R1*.fastq -reverse rim_reverse_run1/*R2* -relabel @ -fastqout mergedfastq_run1/combined_merged_run1_rev_trun.fastq  -tabbedout mergedfastq_run1/combined_merged_run1_rev_trun_pair_report.txt -alnout mergedfastq_run1/combined_merged_run1_rev_trun_pair_aln.txt
+
+#The truncating of the reverse reads by 80bp increased our merging from 33.29% to 67.2%
+#If this does not improve the percentage merged, consider just using the forward reads.
+# https://drive5.com/usearch/manual/merge_badrev.html
+
+    
+
+
+
+
+
