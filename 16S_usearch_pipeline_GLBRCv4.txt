@@ -9,7 +9,7 @@
    	 -Silva for 16S and UNITE for ITS
 	-Other options?
    	 -How frequently do we want to update the database? Usearch-formatted silva file is only in version v.123, but the newest version available (not formatted for usearch) is v.132
-   	 -note that formating of new versions is not trivial
+   	 -note that formating of new versions is not trivial (e.g. Silva has more taxon field than necessary)
 
 -Tree building - what program? 
     -I prefer PASTA (https://github.com/smirarab/pasta/blob/master/pasta-doc/pasta-tutorial.md)
