@@ -16,6 +16,7 @@
     -USEARCH has a tree clustering function but I have no experience with it. cluster_agg (https://www.drive5.com/usearch/manual/cmd_cluster_agg.html)
 
 -How do we merge the usearch created biom file with the taxonomy file? 
+	-A particular problem is how to get the biomformat module to work on the HPCC...
 
 -Primer choices (Bonito lab take particular note)
     -A recent report found that ITS2 primers have acceptable coverage of AMF taxon compared to AMF specific primers. (http://onlinelibrary.wiley.com/doi/10.1111/nph.15035/full). 
