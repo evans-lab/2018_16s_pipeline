@@ -5,6 +5,7 @@
     -What program should we use for the classification?
    	 -sintax in usearch is detailed below
    	 -could use RDP (is it worth it?)
+		-Edgar claims sintax and RDP at 80% will give nearly identical results.
     -What database should we use?
    	 -Silva for 16S and UNITE for ITS
 	-Other options?
